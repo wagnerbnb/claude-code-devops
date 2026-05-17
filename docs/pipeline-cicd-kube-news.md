@@ -30,14 +30,14 @@ Escopo: o problema afeta o ciclo de entrega da aplicação no cluster DOKS. Não
 
 ## Solução proposta
 
-Implementar dois workflows GitHub Actions separados em `.github/workflows/`, com o CI invocando o CD via `workflow_call` — assim o CD só roda quando o CI passou, e o reuso fica explícito.
+Implementar dois workflows GitHub Actions separados em `.github/workflows/`, com o CI invocando o CD via `workflow_call` — assim o CD só roda quando o CI passou (validação + build), e o reuso fica explícito.
 
 ```mermaid
 flowchart LR
     Dev[Desenvolvedor] -->|git push main| GH[GitHub Actions]
-    GH --> CI[CI: validação]
-    CI --> CD[CD: build e deploy]
-    CD --> Registry[(Docker Hub)]
+    GH --> CI[CI: validação + build]
+    CI --> Registry[(Docker Hub)]
+    CI -->|image-tag output| CD[CD: deploy]
     CD --> Cluster[Cluster DOKS]
 ```
 
@@ -52,24 +52,25 @@ flowchart LR
 **`ci.yml`** — gatilhos: `push` em qualquer branch + `pull_request`.
 
 - Job `validate`: `actions/checkout` → `actions/setup-node@v4` com cache npm → `npm ci` em `src/`
-- Job `call-cd` (apenas em `push` na `main`): `uses: ./.github/workflows/cd.yml` com `secrets: inherit`
-
-**`cd.yml`** — gatilhos: `workflow_call` (vindo do CI) + `workflow_dispatch` (manual).
-
-- Job `build-and-push`:
+- Job `build-and-push` (`needs: validate`, apenas em `push` na `main`):
   - `actions/checkout` → `docker/setup-buildx-action` → `docker/login-action` (Docker Hub) → `docker/build-push-action`
   - Contexto de build: `./src`
   - Imagem: `fabricioveronez/evento-kube-news:${{ github.run_number }}`
   - Cache: `type=gha`
-- Job `deploy` (`needs: build-and-push`):
+  - **Output:** `image-tag: ${{ github.run_number }}`
+- Job `call-cd` (`needs: build-and-push`, apenas em `push` na `main`): `uses: ./.github/workflows/cd.yml` com `secrets: inherit` e `with: image-tag: ${{ needs.build-and-push.outputs.image-tag }}`
+
+**`cd.yml`** — gatilhos: `workflow_call` (recebe `inputs.image-tag`) + `workflow_dispatch` (pede `image-tag` como input manual).
+
+- Job `deploy`:
   - `environment: production`
   - `concurrency: deploy-main` (impede deploys simultâneos)
   - `azure/k8s-set-context@v4` recebendo kubeconfig do secret `KUBE_CONFIG`
   - `kubectl apply -f k8s/`
-  - `kubectl -n kube-news set image deploy/kube-news kube-news=fabricioveronez/evento-kube-news:${{ github.run_number }}`
+  - `kubectl -n kube-news set image deploy/kube-news kube-news=fabricioveronez/evento-kube-news:${{ inputs.image-tag }}`
   - `kubectl -n kube-news rollout status deploy/kube-news --timeout=180s`
 
-**Tag da imagem:** `${{ github.run_number }}` — número monotônico incremental do workflow, ótimo didaticamente (a 47ª execução gera `:47`).
+**Tag da imagem:** `${{ github.run_number }}` — número monotônico incremental do workflow, ótimo didaticamente (a 47ª execução gera `:47`). Gerada no CI e passada ao CD via output do `workflow_call`.
 
 **Mapa de impacto:**
 

@@ -108,7 +108,8 @@ node_modules/
 .docker/
 
 # Terraform
-terraform/.terraform/
-terraform/terraform.tfstate*
-terraform/terraform.tfvars
-terraform/*.tfplan
+.terraform/
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+*.tfplan

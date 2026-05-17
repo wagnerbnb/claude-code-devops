@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kube-news
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: kube-news
+type: Opaque
+data:
+  # base64 de "kubedevnews": echo -n 'kubedevnews' | base64
+  DB_DATABASE: a3ViZWRldm5ld3M=
+  DB_USERNAME: a3ViZWRldm5ld3M=
+  # base64 de "Pg#123": echo -n 'Pg#123' | base64
+  # AVISO: não comite este arquivo com senhas reais em produção
+  DB_PASSWORD: UGcjMTIz
+  POSTGRES_DB: a3ViZWRldm5ld3M=
+  POSTGRES_USER: a3ViZWRldm5ld3M=
+  POSTGRES_PASSWORD: UGcjMTIz
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: kube-news
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14-alpine
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "kubedevnews", "-d", "kubedevnews"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: kube-news
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: kube-news
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kube-news
+  template:
+    metadata:
+      labels:
+        app: kube-news
+    spec:
+      containers:
+        - name: kube-news
+          image: fabricioveronez/evento-kube-news:latest
+          env:
+            - name: DB_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DB_DATABASE
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DB_USERNAME
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DB_PASSWORD
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  namespace: kube-news
+spec:
+  # Em clusters locais (kind/minikube sem MetalLB), substitua por NodePort
+  # ou use: minikube tunnel / kubectl port-forward
+  type: LoadBalancer
+  selector:
+    app: kube-news
+  ports:
+    - port: 80
+      targetPort: 8080

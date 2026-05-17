@@ -10,6 +10,13 @@
                 "/home/fabricioveronez/.kube/config:/home/appuser/.kube/config:ro",
                 "mcp/kubernetes"
             ]
+        },
+        "context7": {
+            "type": "http",
+            "url": "https://mcp.context7.com/mcp",
+            "headers": {
+                "CONTEXT7_API_KEY": "ctx7sk-7d7815fa-1aa7-412b-ba83-a9142101dca5"
+            }
         }
     }
 }

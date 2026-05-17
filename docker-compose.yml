@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_DATABASE: kubedevnews
+      DB_USERNAME: kubedevnews
+      DB_PASSWORD: Pg#123
+      DB_HOST: postgres
+      DB_PORT: 5432
+    restart: unless-stopped
+    networks:
+      - kube-news-net
+
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: kubedevnews
+      POSTGRES_USER: kubedevnews
+      POSTGRES_PASSWORD: Pg#123
+    volumes:
+      - .docker_vol/postgres:/var/lib/postgresql/data
+    networks:
+      - kube-news-net
+
+networks:
+  kube-news-net:
